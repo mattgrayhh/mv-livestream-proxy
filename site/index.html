@@ -3,9 +3,71 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Chat Test</title>
+  <title>Live Chat Embed</title>
+  <style>
+    iframe {
+      border: none;
+    }
+  </style>
 </head>
 <body>
-  <iframe width="400" height="315" src="https://www.youtube.com/live_chat?v=nji3dOkATr0&embed_domain=mv-livestream-proxy-production.up.railway.app" title="YouTube chat" frameborder="0" allowfullscreen></iframe>
+  <iframe id="chatFrame" width="100%" height="100%" src="" title="YouTube chat" allowfullscreen></iframe>
+
+  <script>
+    const channelId = "UCDh4zqgfKCCT5oA68PrinkA";
+    const proxyUrl = "https://mv-livestream-proxy-production.up.railway.app/";
+    const iframe = document.getElementById("chatFrame");
+    let currentVideoId = ""; // Will be set by webhook
+
+    // Convert to MST (UTC-7, no DST in Arizona)
+    function getCurrentTimeInMST() {
+      const now = new Date();
+      const mstOffset = -7; // Fixed MST offset
+      const utcOffset = now.getTimezoneOffset() / 60;
+      return new Date(now.getTime() + (mstOffset + utcOffset) * 60 * 60 * 1000);
+    }
+
+    function updateChat() {
+      const now = getCurrentTimeInMST();
+      const day = now.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+      const hours = now.getUTCHours();
+      const minutes = now.getUTCMinutes();
+      const totalMinutes = hours * 60 + minutes;
+
+      // Define service times in MST (Sunday only)
+      const service1Start = 9 * 60; // 9:00 AM MST
+      const service1End = service1Start + 90; // 10:30 AM MST
+      const service2Start = 11 * 60; // 11:00 AM MST
+      const service2End = service2Start + 90; // 12:30 PM MST
+
+      if (day === 0) { // Sunday
+        if (totalMinutes >= service1Start && totalMinutes < service1End && currentVideoId) {
+          iframe.src = `${proxyUrl}?v=${currentVideoId}`;
+          console.log("Updated chat with video ID for 9:00 AM service:", currentVideoId);
+        } else if (totalMinutes >= service2Start && totalMinutes < service2End && currentVideoId) {
+          iframe.src = `${proxyUrl}?v=${currentVideoId}`;
+          console.log("Updated chat with video ID for 11:00 AM service:", currentVideoId);
+        } else {
+          iframe.src = ""; // Clear iframe outside service times
+          console.log("No live chat available at this time.");
+        }
+      } else {
+        iframe.src = ""; // Clear iframe on non-Sunday days
+      }
+    }
+
+    // Set up webhook listener (simple endpoint on this page)
+    window.addEventListener("message", (event) => {
+      if (event.origin === "https://n8n.hazardhouse.ai" && event.data.videoId) { // Replace with your n8n domain
+        currentVideoId = event.data.videoId;
+        console.log("Received video ID from webhook:", currentVideoId);
+        updateChat(); // Update immediately after receiving ID
+      }
+    });
+
+    // Check every minute
+    setInterval(updateChat, 60000);
+    updateChat(); // Initial check
+  </script>
 </body>
 </html>
