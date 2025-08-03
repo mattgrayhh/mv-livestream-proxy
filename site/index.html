@@ -44,8 +44,7 @@
     <div>
       <h2>Live Chat Currently Offline</h2>
       <p>Live chat is available during Sunday services:</p>
-      <p><strong>9:00 AM MST</strong></p>
-      <p><strong>11:00 AM MST</strong></p>
+      <p><strong>9 & 11 AM</strong></p>
     </div>
   </div>
 
@@ -64,12 +63,15 @@
     const status = document.getElementById("status");
     const offlineMessage = document.getElementById("offlineMessage");
     
-    // Convert to MST (UTC-7, no DST in Arizona)
-    function getCurrentTimeInMST() {
+    // Get current time in Arizona (Queen Creek)
+    // Arizona doesn't observe DST, uses America/Phoenix timezone
+    function getArizonaTime() {
       const now = new Date();
-      const mstOffset = -7; // Fixed MST offset
-      const utcOffset = now.getTimezoneOffset() / 60;
-      return new Date(now.getTime() + (utcOffset - mstOffset) * 60 * 60 * 1000);
+      // Use America/Phoenix for accurate Arizona time
+      const arizonaTimeString = now.toLocaleString("en-US", {
+        timeZone: "America/Phoenix"
+      });
+      return new Date(arizonaTimeString);
     }
     
     // Fetch video ID from n8n webhook
@@ -108,7 +110,8 @@
     
     // Update status display
     function updateStatus(message) {
-      status.textContent = `${new Date().toLocaleTimeString('en-US', {timeZone: 'America/Phoenix'})} MST: ${message}`;
+      const arizonaTime = getArizonaTime();
+      status.textContent = `${arizonaTime.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})} AZ: ${message}`;
       status.style.display = 'block';
       setTimeout(() => {
         status.style.display = 'none';
@@ -122,11 +125,11 @@
       const minutes = now.getMinutes();
       const totalMinutes = hours * 60 + minutes;
       
-      // Service times in MST (Sunday only)
-      const service1Start = 9 * 60; // 9:00 AM MST
-      const service1End = 10.5 * 60; // 10:30 AM MST
-      const service2Start = 11 * 60; // 11:00 AM MST
-      const service2End = 12.5 * 60; // 12:30 PM MST
+      // Service times in Arizona time (Sunday only)
+      const service1Start = 9 * 60; // 9:00 AM
+      const service1End = 10.5 * 60; // 10:30 AM
+      const service2Start = 11 * 60; // 11:00 AM
+      const service2End = 12.5 * 60; // 12:30 PM
       
       if (day === 0) { // Sunday
         if ((totalMinutes >= service1Start && totalMinutes < service1End) ||
@@ -139,8 +142,8 @@
     
     // Update chat display
     async function updateChat() {
-      const now = getCurrentTimeInMST();
-      const isLive = isServiceTime(now);
+      const arizonaTime = getArizonaTime();
+      const isLive = isServiceTime(arizonaTime);
       
       if (isLive) {
         // Fetch new ID if we don't have one or it's been more than 5 minutes
