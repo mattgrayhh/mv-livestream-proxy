@@ -5,69 +5,193 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Live Chat Embed</title>
   <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
     iframe {
       border: none;
+      width: 100%;
+      height: 100vh;
+    }
+    .status {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      z-index: 1000;
+    }
+    .offline-message {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #f0f0f0;
+      text-align: center;
+      color: #666;
     }
   </style>
 </head>
 <body>
-  <iframe id="chatFrame" width="100%" height="100%" src="" title="YouTube chat" allowfullscreen></iframe>
+  <div id="status" class="status" style="display: none;"></div>
+  <iframe id="chatFrame" src="" title="YouTube chat" allowfullscreen style="display: none;"></iframe>
+  <div id="offlineMessage" class="offline-message">
+    <div>
+      <h2>Live Chat Currently Offline</h2>
+      <p>Live chat is available during Sunday services:</p>
+      <p><strong>9:00 AM - 10:30 AM MST</strong></p>
+      <p><strong>11:00 AM - 12:30 PM MST</strong></p>
+    </div>
+  </div>
 
   <script>
-    const channelId = "UCDh4zqgfKCCT5oA68PrinkA";
-    const proxyUrl = "https://mv-livestream-proxy-production.up.railway.app/";
+    // Configuration
+    const N8N_WEBHOOK_URL = "https://n8n.hazardhouse.ai/webhook/youtube-live-id"; // Update with your n8n webhook URL
+    const PROXY_URL = "https://mv-livestream-proxy-production.up.railway.app/";
+    const CHECK_INTERVAL = 60000; // Check every minute
+    const FETCH_INTERVAL = 300000; // Fetch new ID every 5 minutes during service times
+    
+    let currentVideoId = null;
+    let lastFetchTime = 0;
+    
+    // Elements
     const iframe = document.getElementById("chatFrame");
-    let currentVideoId = ""; // Will be set by webhook
-
+    const status = document.getElementById("status");
+    const offlineMessage = document.getElementById("offlineMessage");
+    
     // Convert to MST (UTC-7, no DST in Arizona)
     function getCurrentTimeInMST() {
       const now = new Date();
       const mstOffset = -7; // Fixed MST offset
       const utcOffset = now.getTimezoneOffset() / 60;
-      return new Date(now.getTime() + (mstOffset + utcOffset) * 60 * 60 * 1000);
+      return new Date(now.getTime() + (utcOffset - mstOffset) * 60 * 60 * 1000);
     }
-
-    function updateChat() {
-      const now = getCurrentTimeInMST();
-      const day = now.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
-      const hours = now.getUTCHours();
-      const minutes = now.getUTCMinutes();
-      const totalMinutes = hours * 60 + minutes;
-
-      // Define service times in MST (Sunday only)
-      const service1Start = 9 * 60; // 9:00 AM MST
-      const service1End = service1Start + 90; // 10:30 AM MST
-      const service2Start = 11 * 60; // 11:00 AM MST
-      const service2End = service2Start + 90; // 12:30 PM MST
-
-      if (day === 0) { // Sunday
-        if (totalMinutes >= service1Start && totalMinutes < service1End && currentVideoId) {
-          iframe.src = `${proxyUrl}?v=${currentVideoId}`;
-          console.log("Updated chat with video ID for 9:00 AM service:", currentVideoId);
-        } else if (totalMinutes >= service2Start && totalMinutes < service2End && currentVideoId) {
-          iframe.src = `${proxyUrl}?v=${currentVideoId}`;
-          console.log("Updated chat with video ID for 11:00 AM service:", currentVideoId);
+    
+    // Fetch video ID from n8n webhook
+    async function fetchVideoId() {
+      try {
+        const response = await fetch(N8N_WEBHOOK_URL, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.videoId) {
+          currentVideoId = data.videoId;
+          lastFetchTime = Date.now();
+          updateStatus(`Video ID updated: ${currentVideoId}`);
+          console.log("Fetched video ID:", currentVideoId);
+          return true;
         } else {
-          iframe.src = ""; // Clear iframe outside service times
-          console.log("No live chat available at this time.");
+          updateStatus("No video ID available from webhook");
+          console.warn("No video ID in webhook response:", data);
+          return false;
+        }
+      } catch (error) {
+        updateStatus(`Error fetching video ID: ${error.message}`);
+        console.error("Error fetching video ID:", error);
+        return false;
+      }
+    }
+    
+    // Update status display
+    function updateStatus(message) {
+      status.textContent = `${new Date().toLocaleTimeString('en-US', {timeZone: 'America/Phoenix'})} MST: ${message}`;
+      status.style.display = 'block';
+      setTimeout(() => {
+        status.style.display = 'none';
+      }, 5000);
+    }
+    
+    // Check if we're in a service window
+    function isServiceTime(now) {
+      const day = now.getDay(); // 0 = Sunday
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+      const totalMinutes = hours * 60 + minutes;
+      
+      // Service times in MST (Sunday only)
+      const service1Start = 9 * 60; // 9:00 AM MST
+      const service1End = 10.5 * 60; // 10:30 AM MST
+      const service2Start = 11 * 60; // 11:00 AM MST
+      const service2End = 12.5 * 60; // 12:30 PM MST
+      
+      if (day === 0) { // Sunday
+        if ((totalMinutes >= service1Start && totalMinutes < service1End) ||
+            (totalMinutes >= service2Start && totalMinutes < service2End)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    // Update chat display
+    async function updateChat() {
+      const now = getCurrentTimeInMST();
+      const isLive = isServiceTime(now);
+      
+      if (isLive) {
+        // Fetch new ID if we don't have one or it's been more than 5 minutes
+        if (!currentVideoId || (Date.now() - lastFetchTime > FETCH_INTERVAL)) {
+          await fetchVideoId();
+        }
+        
+        if (currentVideoId) {
+          const chatUrl = `${PROXY_URL}?v=${currentVideoId}`;
+          if (iframe.src !== chatUrl) {
+            iframe.src = chatUrl;
+            iframe.style.display = 'block';
+            offlineMessage.style.display = 'none';
+            updateStatus(`Chat active with video ID: ${currentVideoId}`);
+          }
+        } else {
+          // Show offline message if no video ID during service time
+          iframe.style.display = 'none';
+          offlineMessage.style.display = 'flex';
+          updateStatus("Waiting for live stream to start...");
         }
       } else {
-        iframe.src = ""; // Clear iframe on non-Sunday days
+        // Outside service times
+        if (iframe.style.display !== 'none') {
+          iframe.src = '';
+          iframe.style.display = 'none';
+          offlineMessage.style.display = 'flex';
+          currentVideoId = null; // Clear ID outside service times
+          updateStatus("Chat offline - outside service hours");
+        }
       }
     }
-
-    // Set up webhook listener (simple endpoint on this page)
-    window.addEventListener("message", (event) => {
-      if (event.origin === "https://n8n.hazardhouse.ai" && event.data.videoId) { // Replace with your n8n domain
-        currentVideoId = event.data.videoId;
-        console.log("Received video ID from webhook:", currentVideoId);
-        updateChat(); // Update immediately after receiving ID
-      }
-    });
-
-    // Check every minute
-    setInterval(updateChat, 60000);
-    updateChat(); // Initial check
+    
+    // Initialize
+    async function init() {
+      // Initial check
+      await updateChat();
+      
+      // Set up regular checks
+      setInterval(updateChat, CHECK_INTERVAL);
+      
+      // Also check when page becomes visible again
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          updateChat();
+        }
+      });
+    }
+    
+    // Start the app
+    init();
   </script>
 </body>
 </html>
