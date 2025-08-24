@@ -7,10 +7,7 @@
 <style>
   :root, html, body { height: 100%; margin: 0; }
   body { background:#141414; color:#FAF5EA; }
-  #stage { position: relative; height: 100vh; }
   iframe#chatFrame { position:absolute; inset:0; border:0; width:100%; height:100%; }
-  .offline-message{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-                    text-align:center; padding:24px; }
   .status{ position:fixed; top:10px; right:10px; background:rgba(0,0,0,.7);
            color:#fff; padding:10px; border-radius:6px; font-size:12px; z-index:1000 }
   .status.error { background:rgba(160,0,0,.8); }
@@ -18,16 +15,7 @@
 </head>
 <body>
   <div id="status" class="status" hidden></div>
-
-  <div id="stage">
-    <iframe id="chatFrame" title="YouTube live-chat" hidden></iframe>
-    <div id="offlineMessage" class="offline-message">
-      <div>
-        <h2>Chat is currently Offline!</h2>
-        <p>Join us every Sunday to chat during services. See you then!<br><strong>9 & 11 AM</strong></p>
-      </div>
-    </div>
-  </div>
+  <iframe id="chatFrame" title="YouTube live-chat" hidden></iframe>
 
 <script>
 const N8N_WEBHOOK_URL = "https://n8n.hazardhouse.ai/webhook/youtube-live-id";
@@ -35,14 +23,10 @@ const CHECK_INTERVAL  = 60_000;     // check every minute
 const FETCH_INTERVAL  = 5 * 60_000; // refresh videoId at most every 5 min
 let currentVideoId = null, lastFetchTime = 0;
 
-const iframe = document.getElementById('chatFrame');
-const statusEl  = document.getElementById('status');
-const offlineEl = document.getElementById('offlineMessage');
+const iframe   = document.getElementById('chatFrame');
+const statusEl = document.getElementById('status');
 
 const tz = 'America/Phoenix';
-const timeFmt = new Intl.DateTimeFormat('en-US', {
-  timeZone: tz, hour12: false, weekday: 'short', hour: '2-digit', minute:'2-digit'
-});
 const hmFmt = new Intl.DateTimeFormat('en-US', {
   timeZone: tz, hour12: false, hour: '2-digit', minute:'2-digit'
 });
@@ -50,8 +34,7 @@ const wdFmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' 
 
 function azTime(){
   const d = new Date();
-  const [{value:weekday},,, {value:hm}] = timeFmt.formatToParts(d);
-  return `${weekday} ${hm}`;
+  return d.toLocaleString('en-US', { timeZone: tz, hour12: false });
 }
 
 function showStatus(msg, isError=false){
@@ -83,23 +66,19 @@ async function fetchVideoId(){
   }
 }
 
-// Service window in America/Phoenix: Sundays 09:00–10:29 and 11:00–12:29
 function inServiceWindow(now = new Date()){
-  const weekday = wdFmt.format(now); // e.g., 'Sun'
+  const weekday = wdFmt.format(now);
   if (weekday !== 'Sun') return false;
-
   const parts = hmFmt.formatToParts(now);
   const h = Number(parts.find(p=>p.type==='hour').value);
   const m = Number(parts.find(p=>p.type==='minute').value);
   const mins = h*60 + m;
-
   const first = (9*60)  <= mins && mins < (10*60 + 30);
   const second= (11*60) <= mins && mins < (12*60 + 30);
   return first || second;
 }
 
 async function updateChat(){
-  // If inside service window, try (re)loading/refreshing the chat
   if (inServiceWindow()){
     if (!currentVideoId || (Date.now() - lastFetchTime) > FETCH_INTERVAL){
       await fetchVideoId();
@@ -112,15 +91,12 @@ async function updateChat(){
         showStatus('Chat online');
       }
       iframe.hidden = false;
-      offlineEl.hidden = true;
       return;
     }
   }
-
-  // Outside window OR no id → show offline state
+  // No ID or not in window → hide
   iframe.hidden = true;
-  iframe.removeAttribute('src'); // stop loading
-  offlineEl.hidden = false;
+  iframe.removeAttribute('src');
   currentVideoId = null;
 }
 
